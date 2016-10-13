@@ -14,7 +14,7 @@ $Flavor = $BuildInfo[2]
 $BuildDate = $BuildInfo[4]
 $Branch = $BuildInfo[3]
 $FullVer = "$Ver.$SubVer.$BuildDate"
-Write-Host ('BuildString='+$BuildString)
+Write-Host ('BuildString           '+$BuildString)
 Set-Variable -Name $ErrorActionPreference -Value 'Stop'
 Set-Variable -Name $DebugPreference -Value 'Continue'
 Set-Variable -Name $VerbosePreference -Value 'Continue'
@@ -50,9 +50,9 @@ Import-Module ./build.psm1
 try {
   Start-PSBootstrap
 } catch {
-  get-item "${env:ProgramFiles(x86)}\Windows Kits\10\bin\x64\mc.exe" -ea ignore
+  get-item -Path (${Env:ProgramFiles(x86)}+"\Windows Kits\10\bin\x64\mc.exe")
   choco install microsoft-build-tools -y
-  get-item -Path ($env:ProgramFiles(x86)+"\Windows Kits\10\bin\x64\mc.exe")
+  get-item -Path (${Env:ProgramFiles(x86)}+"\Windows Kits\10\bin\x64\mc.exe")
   $vcVarsPath = (Get-Item(Join-Path -Path "$env:VS140COMNTOOLS" -ChildPath '../../vc')).FullName
   get-item -Path $vcVarsPath\vcvarsall.bat
   Start-PSBootstrap
