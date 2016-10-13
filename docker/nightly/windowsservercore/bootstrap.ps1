@@ -42,13 +42,21 @@ Write-output $ProfileScript | out-file (New-Item -Path $PROFILE -ItemType File -
 Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force 
 Set-PSRepository -Name PSGallery -InstallationPolicy Trusted 
 Invoke-Expression ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')) 
-choco install microsoft-build-tools -y
 
 #Build PS
 git clone --recursive https://github.com/$Env:fork/PowerShell.git -b $Env:branch
 Set-Location C:\PowerShell
 Import-Module ./build.psm1
-Start-PSBootstrap
+try {
+  Start-PSBootstrap
+} catch {
+  get-item "${env:ProgramFiles(x86)}\Windows Kits\10\bin\x64\mc.exe" -ea ignore
+  choco install microsoft-build-tools -y
+  get-item -Path ($env:ProgramFiles(x86)+"\Windows Kits\10\bin\x64\mc.exe")
+  $vcVarsPath = (Get-Item(Join-Path -Path "$env:VS140COMNTOOLS" -ChildPath '../../vc')).FullName
+  get-item -Path $vcVarsPath\vcvarsall.bat
+  Start-PSBootstrap
+}
 Start-PSBuild -Clean -CrossGen -Runtime win10-x64 -Configuration Release
 Start-PSPackage -Type msi
 

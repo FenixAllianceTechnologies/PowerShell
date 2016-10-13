@@ -21,6 +21,7 @@ try {
 
 if ($IsWindows)
 {
+{
     $IsAdmin = (New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
@@ -137,7 +138,7 @@ function Start-PSBuild {
         Use-MSBuild
 
         #mc.exe is Message Compiler for native resources
-        $mcexe = get-item "${env:ProgramFiles(x86)}\Windows Kits\10\bin\x64\mc.exe"
+        $mcexe = get-item -Path (${Env:ProgramFiles(x86)}+"\Windows Kits\10\bin\x64\mc.exe")
         if (-not $mcexe) {
             throw 'mc.exe not found. Run Start-PSBootstrap or install Microsoft Windows 10 SDK from https://developer.microsoft.com/en-US/windows/downloads/windows-10-sdk'
         }
