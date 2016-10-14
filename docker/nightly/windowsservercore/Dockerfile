@@ -16,7 +16,7 @@ RUN [ScriptBlock]$Pref= `
     {`
       function Prompt `
       { `
-        [String]$('['+(Get-Date -F g)+'] PS '+ `
+        [String]$('['+(Get-Date -Format g)+'] PS '+ `
         $($executionContext.SessionState.Path.CurrentLocation)+ `
         $('>'*($nestedPromptLevel+1))+' ') `
       } ; $ErrorActionPreference='Stop'; `
@@ -37,34 +37,38 @@ RUN [ScriptBlock]$Pref= `
       <#EndLogging#> `
     } ; Write-Output $Pref | Out-File $(New-Item -Path $PROFILE -ItemType File -Force).FullName -Encoding utf8 -NoNewline ;
 
-#Install NuGet, Chocolatey, Git, Win10 SDK, & MSBuild
+#Install NuGet, Chocolatey, Git, & MSBuild
 RUN Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force ; `
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted ; `
     Invoke-Expression ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')) ; `
-    choco install -v -y --allow-empty-checksums `
+    choco install -v -y `
       git `
       netfx-4.6.1-devpack `
       microsoft-build-tools `
-      cmake ; `
-    write-verbose $Env:Path ; 
+      cmake ;
 
-#TODO - Solve Windows SDK Installation issue: "Exit code was '-2147023293'"...  windows-sdk-10.0 
+#Install Windows SDK 10 - Uses installer policy workaround for "Exit code was '-2147023293'" issue
+RUN $RegKey ='HKLM:\Software\Policies\Microsoft\Windows\Installer'; `
+    New-Item -Path $RegKey -Force ; `
+    New-ItemProperty -Path $RegKey -Name DisableRollback -PropertyType DWord -Value 1 -Force ; `
+    choco install windows-sdk-10.0 -v -y --allow-empty-checksums ;
 
 #Setup PowerShell Repo at C:\PowerShell
 ENV fork=$fork
 ENV branch=$branch
 RUN git clone -v --recursive https://github.com/$Env:fork/PowerShell.git -b $Env:branch ; `
-    Set-Location C:\PowerShell\ ;
+    Test-Path -Path 'C:\PowerShell\Build.psm1' ;
 
 RUN Set-Location C:\PowerShell\ ; `
     Import-Module ./build.psm1 ; `
     Start-PSBootstrap ; `
     Start-PSBuild -Clean -CrossGen -Runtime win10-x64 -Configuration Release ; `
-    Start-PSPackage -Type msi ;
-    #TODO - Install MSI and uncomment ENTRYPOINT at top
+    Start-PSPackage -Type msi ; `
+    Start-Process -FilePath msiexec.exe -ArgumentList '-qn','-i "$env:FullOutput\*.msi"','-norestart' -wait ; 
 
-#Cleanup Installation Policy and $PROFILE
-RUN Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted; `
+#Restore Installation Policy settings to default and clean up the $PROFILE
+RUN Set-ItemProperty -Path $RegKey -Name DisableRollback -Value 0 -Force ; `
+    Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted; `
     $prof=(Get-Content $PROFILE).Replace(' Start-Trans','<#Start-Trans') ; `
     $prof=$prof.Replace('<#StartLogging#>','<#StartLogging ') ; `
     $prof=$prof.Replace('<#EndLogging#>',' EndLogging#>') ; `
