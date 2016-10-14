@@ -1,15 +1,72 @@
+# escape=`
 FROM microsoft/windowsservercore
 MAINTAINER brycem@microsoft.com
+LABEL Readme.md="https://github.com/PowerShell/PowerShell/blob/master/docker/README.md"
+LABEL Description="This Dockerfile will install and build the latest nighly PS build on WindowsServerCore."
+#ENTRYPOINT ["C:\Program Files\PowerShell\PowerShell.exe", "-NoExit", "-c Write-Host Thanks's for trying our Alpha!"]
 
 ARG fork=PowerShell
 ARG branch=BryceM-NightlyDockerFiles
-ARG Git7zip=https://github.com/git-for-windows/git/releases/download/v2.10.1.windows.1/PortableGit-2.10.1-64-bit.7z.exe
-ARG GitSha256=aa0634e026c70fe8b50207b8b125a18f45e259eac32cea246e068577a6546718
 
+# Overriding default 'cmd /S /C <run>' shell command
+SHELL ["powershell.exe", "-command"]
+
+#Prepare shell environment
+RUN [ScriptBlock]$Pref= `
+    {`
+      function Prompt `
+      { `
+        [String]$('['+(Get-Date -F g)+']PS '+ `
+        $($executionContext.SessionState.Path.CurrentLocation)+ `
+        $('>'*($nestedPromptLevel+1))+' ') `
+      } ; $ErrorActionPreference='Stop'; `
+      $ConfirmPreference='None'; `
+      $VerbosePreference='Continue'; `
+      $env:chocolateyUseWindowsCompression = 'false' ; `
+      <#StartLogging#> `
+        Start-Transcript -path C:\Dockerfile.log -append -IncludeInvocationHeader ; `
+        $PSVersionTable | Write-Output ; `
+        $RegPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' ; `
+        $BuildString = $(Get-ItemProperty -Path $RegPath).BuildLabEx ; `
+        $EditionId   = $(Get-ItemProperty -Path $RegPath).EditionId ; `
+        $ProductName = $(Get-ItemProperty -Path $RegPath).ProductName ; `
+        $InstallationType = $(Get-ItemProperty -Path $RegPath).InstallationType ; `
+        Write-Output -InputObject $('FullBuildString: '+$BuildString) ; `
+        Write-Output -InputObject $('OperatingSystem:  '+$ProductName+' '+$EditionId+' '+$InstallationType) `
+      <#EndLogging#> `
+    } ; Write-Output $Pref | Out-File $(New-Item -Path $PROFILE -ItemType File -Force).FullName -Encoding utf8 -NoNewline ;
+
+#Install NuGet, Chocolatey, Git, & MSBuild
+RUN Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force ; `
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted ; `
+    Invoke-Expression ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')) ; `
+    choco install -y --allow-empty-checksums `
+      git `
+      microsoft-build-tools `
+      cmake; `
+    $RegPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' ; `
+    $NewPath=Get-ItemProperty $RegPath|Select Path -ExpandProperty Path ; `
+    $NewPath+=';"C:\Program Files\Git\cmd"' ; `
+    setx /m Path $NewPath ;
+
+#Setup PowerShell Repo at C:\PowerShell
 ENV fork=$fork
 ENV branch=$branch
-ENV Git7zip=$Git7zip
-ENV GitSha256=$GitSha256
+RUN git clone --recursive https://github.com/$Env:fork/PowerShell.git -b $Env:branch
 
-COPY bootstrap.ps1 /
-RUN powershell -f bootstrap.ps1 \
+#TODO - Solve Windows SDK Installation issue: "Exit code was '-2147023293'"...
+RUN Set-Location C:\PowerShell\ ; `
+    Import-Module ./build.psm1 ; `
+    Start-PSBootstrap ; `
+    Start-PSBuild -Clean -CrossGen -Runtime win10-x64 -Configuration Release ; `
+    Start-PSPackage -Type msi ;
+    #TODO - Install MSI and uncomment ENTRYPOINT at top
+
+#Cleanup Installation Policy and $PROFILE
+RUN Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted; `
+    $prof=(Get-Content $PROFILE).Replace(' Start-Trans','<#Start-Trans') ; `
+    $prof=$prof.Replace('<#StartLogging#>','<#StartLogging ') ; `
+    $prof=$prof.Replace('<#EndLogging#>',' EndLogging#>') ; `
+    $prof| Out-File $PROFILE -Encoding utf8 -NoNewline ;
+
+CMD ["cmd","/s","/c","ping -t localhost >null"]
