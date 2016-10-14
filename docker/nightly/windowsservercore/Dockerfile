@@ -16,13 +16,14 @@ RUN [ScriptBlock]$Pref= `
     {`
       function Prompt `
       { `
-        [String]$('['+(Get-Date -F g)+']PS '+ `
+        [String]$('['+(Get-Date -F g)+'] PS '+ `
         $($executionContext.SessionState.Path.CurrentLocation)+ `
         $('>'*($nestedPromptLevel+1))+' ') `
       } ; $ErrorActionPreference='Stop'; `
       $ConfirmPreference='None'; `
       $VerbosePreference='Continue'; `
-      $env:chocolateyUseWindowsCompression = 'false' ; `
+      $Env:chocolateyUseWindowsCompression = 'false' ; `
+      $Env:Path+='`;"$Env:ProgramFiles\Git\cmd"' ; `
       <#StartLogging#> `
         Start-Transcript -path C:\Dockerfile.log -append -IncludeInvocationHeader ; `
         $PSVersionTable | Write-Output ; `
@@ -36,25 +37,25 @@ RUN [ScriptBlock]$Pref= `
       <#EndLogging#> `
     } ; Write-Output $Pref | Out-File $(New-Item -Path $PROFILE -ItemType File -Force).FullName -Encoding utf8 -NoNewline ;
 
-#Install NuGet, Chocolatey, Git, & MSBuild
+#Install NuGet, Chocolatey, Git, Win10 SDK, & MSBuild
 RUN Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force ; `
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted ; `
     Invoke-Expression ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')) ; `
-    choco install -y --allow-empty-checksums `
+    choco install -v -y --allow-empty-checksums `
       git `
+      netfx-4.6.1-devpack `
       microsoft-build-tools `
-      cmake; `
-    $RegPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' ; `
-    $NewPath=Get-ItemProperty $RegPath|Select Path -ExpandProperty Path ; `
-    $NewPath+=';"C:\Program Files\Git\cmd"' ; `
-    setx /m Path $NewPath ;
+      cmake ; `
+    write-verbose $Env:Path ; 
+
+#TODO - Solve Windows SDK Installation issue: "Exit code was '-2147023293'"...  windows-sdk-10.0 
 
 #Setup PowerShell Repo at C:\PowerShell
 ENV fork=$fork
 ENV branch=$branch
-RUN git clone --recursive https://github.com/$Env:fork/PowerShell.git -b $Env:branch
+RUN git clone -v --recursive https://github.com/$Env:fork/PowerShell.git -b $Env:branch ; `
+    Set-Location C:\PowerShell\ ;
 
-#TODO - Solve Windows SDK Installation issue: "Exit code was '-2147023293'"...
 RUN Set-Location C:\PowerShell\ ; `
     Import-Module ./build.psm1 ; `
     Start-PSBootstrap ; `
